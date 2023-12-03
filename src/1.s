@@ -2,13 +2,8 @@
 ;; Day 1 https://adventofcode.com/2023/day/1
 ;;
 ;; This program then iterates over the array on `data` and computes the value on
-;; each row, then accumulating it into a sum variable. This variable is stored
-;; as a 16-bit number on $08-$09. In order to see the actual result, in FCEUX,
-;; for example, you need to go to `Tools -> RAM Watch`, and set a watch on
-;; address $08 which is unsigned and 2-bytes long. This will show you the end
-;; result after a couple of seconds (yes, it's a big ass computation for poor
-;; old NES, and it's quite fast considering that we are not rendering anything
-;; on screen!). The result must be: `54953`.
+;; each row, then accumulating it into a sum variable. The end result will be
+;; printed to the screen, which must be `54953`.
 
 ;; Luckily for us, good ol' NROM can fit the data set for this exercise :D
 .segment "HEADER"
@@ -24,6 +19,8 @@
     .addr nmi, reset, irq
 
 .segment "CHARS"
+    .incbin "../assets/alphanum.chr"
+
 .segment "STARTUP"
 .segment "CODE"
 
@@ -32,6 +29,7 @@
 .include "../include/ppu.s"
 .include "../include/reset.s"
 .include "../include/globals.s"
+.include "../vendor/bcd16.s"
 
 ;; "Variables" used by this program.
 .scope Vars
@@ -80,23 +78,24 @@
 ;; The main function will be called at the end of the `reset` vector as defined
 ;; in `include/reset.s`.
 .proc main
+    ;; Initialize palettes and variables being used for this program.
+    jsr init_palettes
+    jsr Vars::init
+
+    ;; This program uses two flags:
+    ;;   - 7 (`render`): whether NMI-code can render stuff on screen.
+    ;;   - 6 (`done`): whether the computation has been done.
+    ;; Note that we are setting the render flag so the initial message is
+    ;; shown.
+    lda #%10000000
+    sta Globals::m_flags
+
     cli
 
     lda #%10010000
     sta PPU::CONTROL
     lda #%00011110
     sta PPU::MASK
-
-    ;; Initialize variables being used for this program.
-    jsr Vars::init
-
-    ;; This program uses two flags:
-    ;;   - 7 (`render`): whether NMI-code can render stuff on screen. Unused but
-    ;;                   reserved out of habit.
-    ;;   - 6 (`done`): whether the computation has been done.
-    lda #0
-    sta Globals::m_flags
-
 @loop:
     jsr compute_next
     jmp @loop
@@ -187,6 +186,17 @@
     lda #%01000000
     ora Globals::m_flags
     sta Globals::m_flags
+
+    ;; Now that we are done, convert the 16-bit number into separate bytes so it
+    ;; can be rendered on NMI-code.
+    lda Vars::m_sum + 1
+    sta bcdNum
+    lda Vars::m_sum
+    sta bcdNum + 1
+    jsr bcdConvert
+
+    ;; Because of the previous, we can set the `render` flag again.
+    SET_RENDER_FLAG
 @end:
     rts
 .endproc
@@ -221,8 +231,136 @@
     rts
 .endproc
 
-;; Unused.
+;; init_palettes copies all the palettes into the proper PPU address.
+.proc init_palettes
+    PPU_ADDR $3F00
+
+    ldx #0
+@load_palettes_loop:
+    lda palettes, x
+    sta PPU::DATA
+    inx
+    cpx #$20
+    bne @load_palettes_loop
+    rts
+palettes:
+    ;; Background (only first one used)
+    .byte $0F, $30, $10, $00
+    .byte $0F, $00, $00, $00
+    .byte $0F, $00, $00, $00
+    .byte $0F, $00, $00, $00
+
+    ;; Foreground (unused)
+    .byte $0F, $00, $00, $00
+    .byte $0F, $00, $00, $00
+    .byte $0F, $00, $00, $00
+    .byte $0F, $00, $00, $00
+.endproc
+
+;; Non-Maskable Interrupts handler.
 nmi:
+    bit PPU::STATUS
+
+    ;; Skip rendering if the `render` flag is not set.
+    bit Globals::m_flags
+    bpl @nmi_next
+
+    ;; Backup registers.
+    pha
+    txa
+    pha
+    tya
+    pha
+
+    ;; If the result is not there yet, then we just print an initial message.
+    ;; Otherwise print the given result.
+    bit Globals::m_flags
+    bvs :+
+    jsr print_message
+    jmp :++
+:
+    jsr print_result
+:
+
+    ;; Reset the scroll.
+    bit PPU::STATUS
+    lda #$00
+    sta PPU::SCROLL
+    sta PPU::SCROLL
+
+    ;; And unset the render flag so the `main` code is unblocked.
+    UNSET_RENDER_FLAG
+
+    ;; Restore registers.
+    pla
+    tay
+    pla
+    tax
+    pla
+@nmi_next:
+    rti
+
+;; Simply print "Please wait..." to the screen.
+.proc print_message
+    WRITE_PPU_DATA $2129, $2A
+    WRITE_PPU_DATA $212A, $26
+    WRITE_PPU_DATA $212B, $1F
+    WRITE_PPU_DATA $212C, $1B
+    WRITE_PPU_DATA $212D, $2D
+    WRITE_PPU_DATA $212E, $1F
+
+    WRITE_PPU_DATA $2130, $31
+    WRITE_PPU_DATA $2131, $1B
+    WRITE_PPU_DATA $2132, $23
+    WRITE_PPU_DATA $2133, $2E
+    WRITE_PPU_DATA $2134, $36
+    WRITE_PPU_DATA $2135, $36
+    WRITE_PPU_DATA $2136, $36
+
+    rts
+.endproc
+
+;; Print the result on screen. This assumes that `bcdResult` already contains
+;; the proper data.
+.proc print_result
+    ;; Clear tiles that were written by `print_message` and that are not re-used
+    ;; here.
+    WRITE_PPU_DATA $2129, $00
+    WRITE_PPU_DATA $212A, $00
+    WRITE_PPU_DATA $212B, $00
+    WRITE_PPU_DATA $212C, $00
+    WRITE_PPU_DATA $212D, $00
+    WRITE_PPU_DATA $2133, $00
+    WRITE_PPU_DATA $2134, $00
+    WRITE_PPU_DATA $2135, $00
+    WRITE_PPU_DATA $2136, $00
+
+    ;; And loop so PPU::ADDRESS $2E21-$2E32 has the data as stored on bcdResult,
+    ;; which is the binary to decimal conversion result when the final
+    ;; computation was done.
+    ldx #4
+    ldy #$2E
+@loop:
+    ;; PPU address.
+    bit PPU::STATUS
+    lda #$21
+    sta PPU::ADDRESS
+    sty PPU::ADDRESS
+
+    ;; PPU data.
+    lda bcdResult, x
+    clc
+    adc #$10
+    sta PPU::DATA
+    dex
+    iny
+    cpy #$33
+    bne @loop
+
+    rts
+.endproc
+
+;; Unused.
 irq:
     rti
 
