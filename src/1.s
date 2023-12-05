@@ -1,9 +1,9 @@
 ;;;
 ;; Day 1 https://adventofcode.com/2023/day/1
 ;;
-;; This program then iterates over the array on `data` and computes the value on
-;; each row, then accumulating it into a sum variable. The end result will be
-;; printed to the screen, which must be `54953`.
+;; This program iterates over the array on `data` and computes the value on each
+;; row, then accumulating it into a sum variable. The end result will be printed
+;; to the screen, which must be `54953`.
 
 ;; Luckily for us, good ol' NROM can fit the data set for this exercise :D
 .segment "HEADER"
@@ -24,12 +24,14 @@
 .segment "STARTUP"
 .segment "CODE"
 
+.include "../vendor/bcd16.s"
+
 .include "../include/apu.s"
 .include "../include/oam.s"
 .include "../include/ppu.s"
 .include "../include/reset.s"
 .include "../include/globals.s"
-.include "../vendor/bcd16.s"
+.include "../include/print.s"
 
 ;; "Variables" used by this program.
 .scope Vars
@@ -276,10 +278,10 @@ nmi:
     ;; Otherwise print the given result.
     bit Globals::m_flags
     bvs :+
-    jsr print_message
+    jsr Print::show_wait_message
     jmp :++
 :
-    jsr print_result
+    jsr Print::show_bcd_16_number
 :
 
     ;; Reset the scroll.
@@ -299,66 +301,6 @@ nmi:
     pla
 @nmi_next:
     rti
-
-;; Simply print "Please wait..." to the screen.
-.proc print_message
-    WRITE_PPU_DATA $2129, $2A
-    WRITE_PPU_DATA $212A, $26
-    WRITE_PPU_DATA $212B, $1F
-    WRITE_PPU_DATA $212C, $1B
-    WRITE_PPU_DATA $212D, $2D
-    WRITE_PPU_DATA $212E, $1F
-
-    WRITE_PPU_DATA $2130, $31
-    WRITE_PPU_DATA $2131, $1B
-    WRITE_PPU_DATA $2132, $23
-    WRITE_PPU_DATA $2133, $2E
-    WRITE_PPU_DATA $2134, $36
-    WRITE_PPU_DATA $2135, $36
-    WRITE_PPU_DATA $2136, $36
-
-    rts
-.endproc
-
-;; Print the result on screen. This assumes that `bcdResult` already contains
-;; the proper data.
-.proc print_result
-    ;; Clear tiles that were written by `print_message` and that are not re-used
-    ;; here.
-    WRITE_PPU_DATA $2129, $00
-    WRITE_PPU_DATA $212A, $00
-    WRITE_PPU_DATA $212B, $00
-    WRITE_PPU_DATA $212C, $00
-    WRITE_PPU_DATA $212D, $00
-    WRITE_PPU_DATA $2133, $00
-    WRITE_PPU_DATA $2134, $00
-    WRITE_PPU_DATA $2135, $00
-    WRITE_PPU_DATA $2136, $00
-
-    ;; And loop so PPU::ADDRESS $2E21-$2E32 has the data as stored on bcdResult,
-    ;; which is the binary to decimal conversion result when the final
-    ;; computation was done.
-    ldx #4
-    ldy #$2E
-@loop:
-    ;; PPU address.
-    bit PPU::STATUS
-    lda #$21
-    sta PPU::ADDRESS
-    sty PPU::ADDRESS
-
-    ;; PPU data.
-    lda bcdResult, x
-    clc
-    adc #$10
-    sta PPU::DATA
-    dex
-    iny
-    cpy #$33
-    bne @loop
-
-    rts
-.endproc
 
 ;; Unused.
 irq:

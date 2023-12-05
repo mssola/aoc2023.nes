@@ -27,3 +27,6 @@ wiki](https://www.nesdev.org/wiki/Nesdev_Wiki) to get a better picture.
 
 Released under the [GPLv3+](http://www.gnu.org/licenses/gpl-3.0.txt), Copyright
 (C) 2023-<i>Ω</i> Miquel Sabaté Solà.
+
+All code under the `vendor` directory is directly taken from other people and
+not written by me. Attribution is done inside of each file.
