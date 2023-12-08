@@ -38,6 +38,8 @@
 .include "../include/globals.s"
 .include "../include/print.s"
 
+.include "../test/defines.s"
+
 ;; "Variables" used by this program.
 .scope Vars
     ;; Maximum number for each color according to Part 1.
@@ -127,8 +129,18 @@
     sta PPU::MASK
 
 @loop:
+    ;; Skip everything if the `done` flag is set.
+    bit Globals::m_flags
+    bvs @end
+
     jsr compute_next
     jmp @loop
+
+@end:
+    ;; Run tests now that everything has been done.
+    CALL_TESTS_ON_DONE
+@halt:
+    jmp @halt
 .endproc
 
 ;; Compute the next game if needed.
