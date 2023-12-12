@@ -22,10 +22,39 @@
         rts
     .endproc
 
-    ;; TODO
+    ;; Print a "Done!" message to the screen in a similar fashion as `show_wait_message`.
+    .proc show_done_message
+        ;; Clear tiles that were written by `show_wait_message` and that are not
+        ;; re-used here.
+        WRITE_PPU_DATA $2129, $00
+        WRITE_PPU_DATA $212A, $00
+        WRITE_PPU_DATA $212B, $00
+        WRITE_PPU_DATA $212C, $00
+        WRITE_PPU_DATA $212D, $00
+        WRITE_PPU_DATA $2132, $00
+        WRITE_PPU_DATA $2134, $00
+        WRITE_PPU_DATA $2135, $00
+        WRITE_PPU_DATA $2136, $00
+
+        ;; And print the message.
+        WRITE_PPU_DATA $212E, $1E
+        WRITE_PPU_DATA $212F, $29
+        WRITE_PPU_DATA $2130, $28
+        WRITE_PPU_DATA $2131, $1F
+        WRITE_PPU_DATA $2133, $37
+
+        rts
+    .endproc
+
+    ;; Show a 16-bit number on screen.
+    ;;
+    ;; NOTE: This subroutine will do nothing if `vendor/bcd16.s` has not been
+    ;; previously included.
     .proc show_bcd_16_number
-        ;; Clear tiles that were written by `show_wait_message` and that are not re-used
-        ;; here.
+        .ifdef BCD16_SUPPORT
+
+        ;; Clear tiles that were written by `show_wait_message` and that are not
+        ;; re-used here.
         WRITE_PPU_DATA $2129, $00
         WRITE_PPU_DATA $212A, $00
         WRITE_PPU_DATA $212B, $00
@@ -58,6 +87,7 @@
         cpy #$33
         bne @loop
 
+        .endif
         rts
     .endproc
 

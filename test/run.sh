@@ -19,7 +19,7 @@ if [ -n "${GITHUB_ACTION}" ]; then
 fi
 
 # Run all the tests that we have on Lua.
-for name in $(seq 2); do
+for name in $(seq 3); do
     DEBUG=1 make out/$name.nes
     fceux --loadlua "$ROOT/test/$name.lua" "$ROOT/out/$name.nes"
 done

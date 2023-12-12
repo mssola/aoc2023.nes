@@ -48,10 +48,9 @@ function utils.MemTest(label, addresses)
     if expected == got then
       io.write("OK\n")
     else
-      io.write("\n-> Test '".. label .."': FAIL\n")
+      io.write("FAIL\n")
       io.write("Expected: ".. expected .. "\n")
       io.write("Got: ".. got .. "\n")
-      io.write("\n")
     end
     io.close(file)
   end)

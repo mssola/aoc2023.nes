@@ -13,6 +13,10 @@
 
 .p02
 
+;; Define so you can better manage code that you want included whenever this
+;; feature has been included.
+BCD16_SUPPORT = 1
+
 .exportzp bcdNum, bcdResult
 .export bcdConvert
 

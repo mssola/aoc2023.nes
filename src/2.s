@@ -138,7 +138,10 @@
 
 @end:
     ;; Run tests now that everything has been done.
-    CALL_TESTS_ON_DONE
+.ifdef RUN_TESTS
+@test:
+    nop
+.endif
 @halt:
     jmp @halt
 .endproc

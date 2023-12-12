@@ -5,7 +5,7 @@ CCOPTS += -g -Ln out/labels.txt
 endif
 QUIET  = @echo '   ' CC65 $@;
 
-SOURCES = $(shell find src/ -type f -name '*.s' -printf "%f\n")
+SOURCES = $(shell find src/ -type f -name '*.s' -printf "%f\n" | sort)
 ROMS = $(SOURCES:%.s=out/%.nes)
 
 .PHONY: all
