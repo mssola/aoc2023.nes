@@ -1,7 +1,14 @@
 ;;;
 ;; Day 4 https://adventofcode.com/2023/day/4
 ;;
-;; TODO
+;; The enunciate has two parts and this program gives an answer to both in a
+;; single iteration.
+;;
+;;   - Part 1: the answer will be printed on screen and the value is stored in
+;;             RAM address: $07-$08 (see `Vars::m_total`).
+;;   - Part 2: the answer is stored in RAM address: $09-$0C (see
+;;             `Vars::m_total_2`). Printing a 32-bit integer on screen is a bit
+;;             difficult, that's why I have left out this part for now.
 
 .segment "HEADER"
     .byte 'N', 'E', 'S', $1A
@@ -22,6 +29,7 @@
 .segment "CODE"
 
 .include "../vendor/bcd16.s"
+.include "../vendor/list.nes/list.s"
 
 .include "../include/apu.s"
 .include "../include/oam.s"
@@ -55,6 +63,14 @@
     ;; NOTE: 16-bit ($07-$08).
     m_total = $07
 
+    ;; The result for part 2.
+    ;;
+    ;; NOTE: 32-bit ($09-$0C)
+    m_total_2 = $09
+
+    ;; Number of matches for a given row.
+    m_matches = $0D
+
     ;; List of winning numbers. Note that we assume that a row will have 10
     ;; elements maximum (guaranteed by the enunciate).
     m_list = $10
@@ -63,16 +79,54 @@
     ;; the size of the `m_list` when we are done filling it.
     m_list_index = $1A
 
+    ;; List of card instances. Note that each item is actually 24-bit long.
+    ;; Hence, considering that the enunciate input has 198 cards, we need 198 *
+    ;; 3 bytes of memory to store this information: 594 bytes in total. We will
+    ;; store all of this (daunting) amount of data starting at $0400, which has
+    ;; room up until $07FF (1KB in total). This should be enough for all of
+    ;; this, and more so considering that there is nothing left to store in
+    ;; here. Moreover this list is managed through the `list.nes` vendored
+    ;; library so we don't have to care about stuff like maintaining multiple
+    ;; 16-bit pointers, overflow control, etc.
+    m_cards = $0400
+
+    ;; The amount of cards being stored on `m_cards`.
+    N_CARDS = 198
+
     ;; Initialize some of the variables.
     .proc init
         lda #0
         sta m_total
         sta m_total + 1
+        sta m_total_2
+        sta m_total_2 + 1
+        sta m_total_2 + 2
+        sta m_total_2 + 3
 
+        ;; Set the address of the data to be consumed.
         lda #.LOBYTE(data)
         sta Vars::m_address
         lda #.HIBYTE(data)
         sta Vars::m_address + 1
+
+        ;; Each item on the m_cards list is 3 bytes long in little endian
+        ;; format. Thus, we will push three bytes on each iteration until we
+        ;; reach `N_CARDS`.
+        LIST_INIT $0400
+        ldx #0
+    @loop:
+        lda #1
+        jsr List::push
+        lda #0
+        jsr List::push
+        lda #0
+        jsr List::push
+        inx
+        cpx #N_CARDS
+        bne @loop
+
+        ;; And reset back the iterator so it can be used straight away.
+        LIST_IT_FROM $0400
 
         rts
     .endproc
@@ -88,6 +142,8 @@
     ;; This program uses two flags:
     ;;   - 7 (`render`): whether NMI-code can render stuff on screen.
     ;;   - 6 (`done`): whether the computation has been done.
+    ;;   - 0 (`part 1 done`): whether part 1 has been done. This denotes that
+    ;;                        the final pass on part 2 can start.
     ;; Note that we are setting the render flag so the initial message is
     ;; shown.
     lda #%10000000
@@ -120,8 +176,18 @@
 
 ;; Compute the next card if needed.
 .proc compute_next
+    ;; Is part 1 done? If so perform the final counting from part 2 before
+    ;; marking the exercise as done, otherwise just go to the usual part 1 route
+    ;; of computing the current row.
+    lda Globals::m_flags
+    and #1
+    beq @part1
+    jsr count_cards
+    jmp @next
+@part1:
     jsr compute_row
 
+@next:
     ;; `compute_row` leaves the `y` register right at the end of the current
     ;; string (`\0` character). Now let's increase this value to get into the
     ;; first byte of the next row and add it into the base `Vars::m_address`, so
@@ -135,14 +201,14 @@
     adc Vars::m_address + 1
     sta Vars::m_address + 1
 
-    ;; Are we actually at the end of the exercise? If not, return early.
+    ;; Are we actually at the end of parsing the data? If not, return early.
     ldy #0
     lda (Vars::m_address), y
     cmp #$ED
     bne @end
 
-    ;; Mark the `done` flag so future iterations don't go through all of this.
-    lda #%01000000
+    ;; Mark the `part 1 done` flag so part 2 can begin its final crunch.
+    lda #%00000001
     ora Globals::m_flags
     sta Globals::m_flags
 
@@ -153,9 +219,6 @@
     lda Vars::m_total + 1
     sta bcdNum + 1
     jsr bcdConvert
-
-    ;; Because of the previous, we can set the `render` flag again.
-    SET_RENDER_FLAG
 @end:
     rts
 .endproc
@@ -163,10 +226,12 @@
 ;; Evaluate the current row and add up the results.
 .proc compute_row
     ;; Basically: set the winning list (left of the `|` character), and check it
-    ;; with the numbers we have on the right of the `|` character.
+    ;; with the numbers we have on the right of the `|` character. And as for
+    ;; part 2 accumulate the cards depending on the matches.
     jsr skip_card_title
     jsr fill_winning_list
     jsr check_given_list
+    jsr accumulate_cards
 
     ;; And add the value we have just computed with the general `Vars::m_total`
     ;; variable.
@@ -178,6 +243,64 @@
     adc Vars::m_total + 1
     sta Vars::m_total + 1
 
+    rts
+.endproc
+
+;; Count all the scratch cards that have been accumulated over the
+;; `Vars::m_cards` list.
+.proc count_cards
+    LIST_IT_FROM $0400
+
+@loop:
+    ;; Get all three bytes for the current item. Notice two things. First of
+    ;; all, we set the values into separate auxiliary variables that are no
+    ;; longer needed. This is done this way because the `List::get` calls will
+    ;; actually tamper with the carry flag, and so the addition with carry flag
+    ;; being accounted should be after these calls. And second, one nice
+    ;; property of `List::get` is that it will set `y` to `$FF` once we are done
+    ;; iterating.
+    jsr List::get
+    sta Vars::m_num_1
+    cpy #$FF
+    beq @done
+    jsr List::get
+    sta Vars::m_num_2
+    jsr List::get
+    sta Vars::m_num_3
+
+    ;; Grab the low byte and add it into the total.
+    lda Vars::m_num_1
+    clc
+    adc Vars::m_total_2
+    sta Vars::m_total_2
+
+    ;; Grab the mid byte and add it into the second byte from `m_total_2` with
+    ;; carry.
+    lda Vars::m_num_2
+    adc Vars::m_total_2 + 1
+    sta Vars::m_total_2 + 1
+
+    ;; Grab the high byte and add it into the third byte from `m_total_2` with
+    ;; carry.
+    lda Vars::m_num_3
+    adc Vars::m_total_2 + 2
+    sta Vars::m_total_2 + 2
+
+    ;; And for the most significant byte of this 32-bit integer just deal with
+    ;; the carry.
+    lda #0
+    adc Vars::m_total_2 + 3
+    sta Vars::m_total_2 + 3
+
+    jmp @loop
+@done:
+    ;; Flags: unset `part 1 done` and set `done` and `render`.
+    lda #%11000000
+    ora Globals::m_flags
+    sta Globals::m_flags
+    lda #%11111110
+    and Globals::m_flags
+    sta Globals::m_flags
     rts
 .endproc
 
@@ -232,6 +355,7 @@
     lda #0
     sta Vars::m_row
     sta Vars::m_row + 1
+    sta Vars::m_matches
 
 @loop:
     lda (Vars::m_address), y
@@ -282,7 +406,12 @@
     jmp @loop
 
 @won:
-    ;; There's a match! Now we need to shift left a `1` across a 16-bit number.
+    ;; There's a match! As for part 2 of the exercise we need to increase the
+    ;; number of matches found.
+    inc Vars::m_matches
+
+    ;; And as for part 1 of the exercise we need to shift left a `1` across a
+    ;; 16-bit number.
     lda Vars::m_row
     beq @set
 
@@ -305,6 +434,91 @@
 @init:
     inc Vars::m_row
 @done:
+    rts
+.endproc
+
+;; Called for part 2: carry over the cards for the current item into the next
+;; number of matches.
+.proc accumulate_cards
+    ;; We must preserve the value of `y`, but we need it here as well. Let's
+    ;; push it into the stack.
+    tya
+    pha
+
+    ;; Grab the number of cards we have on the current spot. This is the number
+    ;; that we will need to add to the next `y` cards.
+    jsr List::get
+    sta Vars::m_num_1
+    jsr List::get
+    sta Vars::m_num_2
+    jsr List::get
+    sta Vars::m_num_3
+
+    ;; Preserve the pointer as it is because it will be relevant for future
+    ;; iterations.
+    lda List::ptr
+    pha
+    lda List::ptr + 1
+    pha
+
+@loop:
+    ;; Iterate as many times as matches were found.
+    lda Vars::m_matches
+    beq @done
+    dec Vars::m_matches
+
+    ;; The body of the loop might seem more confusing that it actually is. The
+    ;; thing is that we want to add along the carry flag on the three
+    ;; consecutive bytes. Thus, we perform the three computations and reserve
+    ;; the value on the stack. Because of the stacking logic, the `y` register
+    ;; has to flow in a similar fashion (first increasing and then decreasing).
+
+    ldy #0
+    lda Vars::m_num_1
+    clc
+    adc (List::ptr), y
+    pha
+
+    iny
+    lda Vars::m_num_2
+    adc (List::ptr), y
+    pha
+
+    iny
+    lda Vars::m_num_3
+    adc (List::ptr), y
+    sta (List::ptr), y
+
+    dey
+    pla
+    sta (List::ptr), y
+
+    dey
+    pla
+    sta (List::ptr), y
+
+    ;; Since we have fetched data manually, we can advance the list pointer
+    ;; manually as well: three times for three bytes being consumed.
+    clc
+    lda #3
+    adc List::ptr
+    sta List::ptr
+    lda #0
+    adc List::ptr + 1
+    sta List::ptr + 1
+
+    jmp @loop
+@done:
+    ;; Restore the pointer so it points to the next element after the current
+    ;; one for future iterations.
+    pla
+    sta List::ptr + 1
+    pla
+    sta List::ptr
+
+    ;; Restore the value on `y` and return.
+    pla
+    tay
     rts
 .endproc
 

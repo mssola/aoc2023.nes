@@ -1,0 +1,3 @@
+[submodule "vendor/list.nes"]
+	path = vendor/list.nes
+	url = https://github.com/mssola/list.nes
