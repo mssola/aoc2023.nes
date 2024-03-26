@@ -1,8 +1,9 @@
-[Advent of Code 2023](https://adventofcode.com/2023) on the NES, baby! (let's
-see if I actually finish it...)
-
-Each day is written into its own file inside of `src`. In order to clone it bear
-in mind that the `vendor` directory has git submodules. Hence:
+[Advent of Code 2023](https://adventofcode.com/2023) on the NES. The whole thing
+turned out to be quite tricky on this 8-bit system, with days that required
+computing really big numbers. I put up with this for some days, but starting on
+the fifth one it was unbearable. Thus, this repo contains only until the fourth
+day (included). Each day is written into its own file inside of `src`. In order
+to clone it bear in mind that the `vendor` directory has git submodules. Hence:
 
 ``` sh
 git clone --recurse-submodule https://github.com/mssola/aoc2023.nes.git
@@ -38,5 +39,5 @@ wiki](https://www.nesdev.org/wiki/Nesdev_Wiki) to get a better picture.
 Released under the [GPLv3+](http://www.gnu.org/licenses/gpl-3.0.txt), Copyright
 (C) 2023-<i>Ω</i> Miquel Sabaté Solà.
 
-All code under the `vendor` directory is directly taken from other people and
-not written by me. Attribution is done inside of each file.
+The `vendor` directory contains code that might have been written by other
+people. Attribution is given on each file.
