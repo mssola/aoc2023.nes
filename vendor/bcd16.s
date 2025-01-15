@@ -10,15 +10,12 @@
 ;
 ; @mssola: The memory addresses being used here have been modified so they don't
 ; clash with my programs (from $0x to $8x).
-
-.p02
+; @mssola: Remove stuff that was not needed for NES/Famicom development.
+; @mssola: Rename 'b' to 'lowByte' so it conforms to what 'nasm' expect.
 
 ;; Define so you can better manage code that you want included whenever this
 ;; feature has been included.
 BCD16_SUPPORT = 1
-
-.exportzp bcdNum, bcdResult
-.export bcdConvert
 
 ; bcdConvert
 ;
@@ -63,13 +60,13 @@ BCD_BITS = 19
 ;   out, the byte is complete and should be copied to result.
 ;   (This behavior is called a "ring counter".)
 ;   Overwritten.
-; b
+; lowByte
 ;   Low byte of the result of trial subtraction.
 ;   Overwritten.
 bcdNum = $80
 bcdResult = $82
 curDigit = $87
-b = $82
+lowByte = $82
 
 ;
 ; Completes within 670 cycles.
@@ -82,18 +79,18 @@ bcdConvert:
   ldy #BCD_BITS - 5
 
 @loop:
-  ; Trial subtract this bit to A:b
+  ; Trial subtract this bit to A:lowByte
   sec
   lda bcdNum
   sbc bcdTableLo,y
-  sta b
+  sta lowByte
   lda bcdNum+1
   sbc bcdTableHi,y
 
-  ; If A:b > bcdNum then bcdNum = A:b
+  ; If A:lowByte > bcdNum then bcdNum = A:lowByte
   bcc @trial_lower
   sta bcdNum+1
-  lda b
+  lda lowByte
   sta bcdNum
 @trial_lower:
 
